@@ -10,12 +10,13 @@ on:
       - '*.md'
       - '*.mdx'
   pull_request:
-    types: [opened, synchronize, reopened, labeled]
+    types: [ opened, synchronize, reopened, labeled ]
     paths-ignore:
       - 'docs/**'
       - '*.md'
       - '*.mdx'
 
+# https://docs.github.com/en/actions/using-jobs/using-concurrency
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -23,9 +24,14 @@ concurrency:
 jobs:
   ragflow_tests:
     name: ragflow_tests
+    # https://docs.github.com/en/actions/using-jobs/using-conditions-to-control-job-execution
+    # https://github.com/orgs/community/discussions/26261
     if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci') }}
-    runs-on: ubuntu-latest # Use GitHub-hosted runner
+    runs-on: [ "self-hosted", "debug" ]
     steps:
+      # https://github.com/hmarr/debug-action
+      #- uses: hmarr/debug-action@v2
+
       - name: Show PR labels
         run: |
           echo "Workflow triggered by ${{ github.event_name }}"
@@ -39,59 +45,32 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v4
 
-      - name: Build ragflow:dev-slim (arm64)
+      - name: Build ragflow:dev-slim
         run: |
           RUNNER_WORKSPACE_PREFIX=${RUNNER_WORKSPACE_PREFIX:-$HOME}
           cp -r ${RUNNER_WORKSPACE_PREFIX}/huggingface.co ${RUNNER_WORKSPACE_PREFIX}/nltk_data ${RUNNER_WORKSPACE_PREFIX}/libssl*.deb .
           sudo docker pull ubuntu:24.04
-          sudo docker build --build-arg ARCH=arm64 -f Dockerfile.slim -t ghcr.io/${{ github.repository_owner }}/ragflow:dev-slim .
+          sudo docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
 
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v2
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Push ragflow:dev-slim to ghcr.io (arm64)
+      - name: Build ragflow:dev
         run: |
-          IMAGE_NAME=ghcr.io/${{ github.repository_owner }}/ragflow:dev-slim:arm64
-          sudo docker tag ghcr.io/${{ github.repository_owner }}/ragflow:dev-slim $IMAGE_NAME
-          sudo docker push $IMAGE_NAME
-
-          # Tag and push as latest
-          sudo docker tag $IMAGE_NAME ghcr.io/${{ github.repository_owner }}/ragflow:dev-slim:latest
-          sudo docker push ghcr.io/${{ github.repository_owner }}/ragflow:dev-slim:latest
-
-      - name: Build ragflow:dev (arm64)
-        run: |
-          sudo docker build --build-arg ARCH=arm64 -f Dockerfile -t ghcr.io/${{ github.repository_owner }}/ragflow:dev .
-
-      - name: Push ragflow:dev to ghcr.io (arm64)
-        run: |
-          IMAGE_NAME=ghcr.io/${{ github.repository_owner }}/ragflow:dev:arm64
-          sudo docker tag ghcr.io/${{ github.repository_owner }}/ragflow:dev $IMAGE_NAME
-          sudo docker push $IMAGE_NAME
-
-          # Tag and push as latest
-          sudo docker tag $IMAGE_NAME ghcr.io/${{ github.repository_owner }}/ragflow:dev:latest
-          sudo docker push ghcr.io/${{ github.repository_owner }}/ragflow:dev:latest
+          sudo docker build -f Dockerfile -t infiniflow/ragflow:dev .
 
       - name: Start ragflow:dev-slim
         run: |
           sudo docker compose -f docker/docker-compose.yml up -d
 
       - name: Stop ragflow:dev-slim
-        if: always()
+        if: always()  # always run this step even if previous steps failed
         run: |
           sudo docker compose -f docker/docker-compose.yml down -v
 
       - name: Start ragflow:dev
         run: |
-          echo "RAGFLOW_IMAGE=ghcr.io/${{ github.repository_owner }}/ragflow:dev" >> docker/.env
+          echo "RAGFLOW_IMAGE=infiniflow/ragflow:dev" >> docker/.env
           sudo docker compose -f docker/docker-compose.yml up -d
 
       - name: Stop ragflow:dev
-        if: always()
+        if: always()  # always run this step even if previous steps failed
         run: |
           sudo docker compose -f docker/docker-compose.yml down -v
