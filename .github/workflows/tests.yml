@@ -1,76 +1,74 @@
-name: tests
+name: Docker
 
 on:
+  schedule:
+    - cron: '22 5 * * *'
   push:
-    branches:
-      - 'main'
-      - '*.*.*'
-    paths-ignore:
-      - 'docs/**'
-      - '*.md'
-      - '*.mdx'
+    branches: [ "main" ]
+    tags: [ 'v*.*.*' ]
   pull_request:
-    types: [ opened, synchronize, reopened, labeled ]
-    paths-ignore:
-      - 'docs/**'
-      - '*.md'
-      - '*.mdx'
+    branches: [ "main" ]
 
-# https://docs.github.com/en/actions/using-jobs/using-concurrency
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  ragflow_tests:
-    name: ragflow_tests
-    # https://docs.github.com/en/actions/using-jobs/using-conditions-to-control-job-execution
-    # https://github.com/orgs/community/discussions/26261
-    if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci') }}
-    runs-on: [ "self-hosted", "debug" ]
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+
     steps:
-      # https://github.com/hmarr/debug-action
-      #- uses: hmarr/debug-action@v2
-
-      - name: Show PR labels
-        run: |
-          echo "Workflow triggered by ${{ github.event_name }}"
-          if [[ ${{ github.event_name }} == 'pull_request' ]]; then
-            echo "PR labels: ${{ join(github.event.pull_request.labels.*.name, ', ') }}"
-          fi
-
-      - name: Ensure workspace ownership
-        run: echo "chown -R $USER $GITHUB_WORKSPACE" && sudo chown -R $USER $GITHUB_WORKSPACE
-
-      - name: Check out code
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Build ragflow:dev-slim
-        run: |
-          RUNNER_WORKSPACE_PREFIX=${RUNNER_WORKSPACE_PREFIX:-$HOME}
-          cp -r ${RUNNER_WORKSPACE_PREFIX}/huggingface.co ${RUNNER_WORKSPACE_PREFIX}/nltk_data ${RUNNER_WORKSPACE_PREFIX}/libssl*.deb .
-          sudo docker pull ubuntu:24.04
-          sudo docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
+      - name: Install cosign
+        if: github.event_name != 'pull_request'
+        uses: sigstore/cosign-installer@59acb6260d9c0ba8f4a2f9d9b48431a222b68e20 #v3.5.0
+        with:
+          cosign-release: 'v2.2.4'
 
-      - name: Build ragflow:dev
-        run: |
-          sudo docker build -f Dockerfile -t infiniflow/ragflow:dev .
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f95db51fddba0c2d1ec667646a06c2ce06100226 # v3.0.0
 
-      - name: Start ragflow:dev-slim
-        run: |
-          sudo docker compose -f docker/docker-compose.yml up -d
+      - name: Log into registry ${{ env.REGISTRY }}
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@343f7c4344506bcbf9b4de18042ae17996df046d # v3.0.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Stop ragflow:dev-slim
-        if: always()  # always run this step even if previous steps failed
-        run: |
-          sudo docker compose -f docker/docker-compose.yml down -v
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@96383f45573cb7f253c731d3b3ab81c87ef81934 # v5.0.0
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            ${{ github.ref }} # This includes the ref (like v1.2.3)
+            latest           # Add 'latest' tag
 
-      - name: Start ragflow:dev
-        run: |
-          echo "RAGFLOW_IMAGE=infiniflow/ragflow:dev" >> docker/.env
-          sudo docker compose -f docker/docker-compose.yml up -d
+      - name: Build and push Docker image
+        id: build-and-push
+        uses: docker/build-push-action@0565240e2d4ab88bba5387d719585280857ece09 # v5.0.0
+        with:
+          context: .
+          file: Dockerfile.slim  # Specify your custom Dockerfile name here
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/arm64  # Add this line to support multiple architectures
 
-      - name: Stop ragflow:dev
-        if: always()  # always run this step even if previous steps failed
-        run: |
-          sudo docker compose -f docker/docker-compose.yml down -v
+
+      - name: Sign the published Docker image
+        if: ${{ github.event_name != 'pull_request' }}
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+          DIGEST: ${{ steps.build-and-push.outputs.digest }}
+        run: echo "${TAGS}" | xargs -I {} cosign sign --yes {}@${DIGEST}
+
