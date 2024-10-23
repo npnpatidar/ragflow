@@ -10,13 +10,12 @@ on:
       - '*.md'
       - '*.mdx'
   pull_request:
-    types: [ opened, synchronize, reopened, labeled ]
+    types: [opened, synchronize, reopened, labeled]
     paths-ignore:
       - 'docs/**'
       - '*.md'
       - '*.mdx'
 
-# https://docs.github.com/en/actions/using-jobs/using-concurrency
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -24,14 +23,8 @@ concurrency:
 jobs:
   ragflow_tests:
     name: ragflow_tests
-    # https://docs.github.com/en/actions/using-jobs/using-conditions-to-control-job-execution
-    # https://github.com/orgs/community/discussions/26261
-    if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci') }}
-    runs-on: [ "self-hosted", "debug" ]
+    runs-on: ubuntu-latest # Use GitHub-hosted Ubuntu runner
     steps:
-      # https://github.com/hmarr/debug-action
-      #- uses: hmarr/debug-action@v2
-
       - name: Show PR labels
         run: |
           echo "Workflow triggered by ${{ github.event_name }}"
@@ -45,32 +38,33 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v4
 
-      - name: Build ragflow:dev-slim
+      - name: Setup NLTK Data and Other Files
         run: |
           RUNNER_WORKSPACE_PREFIX=${RUNNER_WORKSPACE_PREFIX:-$HOME}
+          # Copy required NLTK data to the workspace
           cp -r ${RUNNER_WORKSPACE_PREFIX}/huggingface.co ${RUNNER_WORKSPACE_PREFIX}/nltk_data ${RUNNER_WORKSPACE_PREFIX}/libssl*.deb .
-          sudo docker pull ubuntu:24.04
-          sudo docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
 
-      - name: Build ragflow:dev
+      - name: Build ragflow:dev-slim (arm64)
         run: |
-          sudo docker build -f Dockerfile -t infiniflow/ragflow:dev .
+          sudo docker pull ubuntu:24.04
+          sudo docker build --build-arg ARCH=arm64 -f Dockerfile.slim -t ghcr.io/${{ github.repository_owner }}/ragflow:latest .
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push ragflow:dev-slim to ghcr.io (latest)
+        run: |
+          sudo docker push ghcr.io/${{ github.repository_owner }}/ragflow:latest
 
       - name: Start ragflow:dev-slim
         run: |
           sudo docker compose -f docker/docker-compose.yml up -d
 
       - name: Stop ragflow:dev-slim
-        if: always()  # always run this step even if previous steps failed
-        run: |
-          sudo docker compose -f docker/docker-compose.yml down -v
-
-      - name: Start ragflow:dev
-        run: |
-          echo "RAGFLOW_IMAGE=infiniflow/ragflow:dev" >> docker/.env
-          sudo docker compose -f docker/docker-compose.yml up -d
-
-      - name: Stop ragflow:dev
-        if: always()  # always run this step even if previous steps failed
+        if: always() # always run this step even if previous steps failed
         run: |
           sudo docker compose -f docker/docker-compose.yml down -v
