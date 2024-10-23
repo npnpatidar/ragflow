@@ -41,8 +41,24 @@ jobs:
       - name: Setup NLTK Data and Other Files
         run: |
           RUNNER_WORKSPACE_PREFIX=${RUNNER_WORKSPACE_PREFIX:-$HOME}
-          # Copy required NLTK data to the workspace
-          cp -r ${RUNNER_WORKSPACE_PREFIX}/huggingface.co ${RUNNER_WORKSPACE_PREFIX}/nltk_data ${RUNNER_WORKSPACE_PREFIX}/libssl*.deb .
+          # Check if huggingface.co directory exists before copying
+          if [ -d "${RUNNER_WORKSPACE_PREFIX}/huggingface.co" ]; then
+            cp -r ${RUNNER_WORKSPACE_PREFIX}/huggingface.co .
+          else
+            echo "Warning: huggingface.co directory does not exist."
+          fi
+          # Check if nltk_data directory exists before copying
+          if [ -d "${RUNNER_WORKSPACE_PREFIX}/nltk_data" ]; then
+            cp -r ${RUNNER_WORKSPACE_PREFIX}/nltk_data .
+          else
+            echo "Warning: nltk_data directory does not exist."
+          fi
+          # Check if libssl*.deb files exist before copying
+          if ls ${RUNNER_WORKSPACE_PREFIX}/libssl*.deb 1> /dev/null 2>&1; then
+            cp ${RUNNER_WORKSPACE_PREFIX}/libssl*.deb .
+          else
+            echo "Warning: libssl*.deb files do not exist."
+          fi
 
       - name: Build ragflow:dev-slim (arm64)
         run: |
