@@ -24,7 +24,7 @@ jobs:
   ragflow_tests:
     name: ragflow_tests
     if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci') }}
-    runs-on: ["self-hosted", "debug"]
+    runs-on: ubuntu-latest # Use GitHub-hosted runner
     steps:
       - name: Show PR labels
         run: |
