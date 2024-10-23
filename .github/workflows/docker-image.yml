@@ -43,6 +43,18 @@ jobs:
           python -m pip install nltk
           python -m nltk.downloader -d nltk_data all
 
+      - name: Prepare huggingface.co Directory
+        run: |
+          # Create huggingface.co directory if it doesn't exist
+          if [ ! -d "huggingface.co" ]; then
+            mkdir -p huggingface.co
+            # You can also add commands to download the required content here if needed
+            # For example:
+            # curl -L <huggingface_resource_url> -o huggingface.co/resource_file
+          else
+            echo "huggingface.co directory already exists."
+          fi
+
       - name: Build ragflow:dev-slim (arm64)
         run: |
           sudo docker pull ubuntu:24.04
