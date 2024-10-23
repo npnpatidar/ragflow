@@ -91,6 +91,7 @@ RUN --mount=type=bind,source=huggingface.co,target=/huggingface.co \
         | tar -xf - --strip-components=3 -C /ragflow/rag/res/deepdoc
 
 # Copy nltk data downloaded via download_deps.py
+RUN python3 -m nltk.downloader -d /root/nltk_data all
 COPY nltk_data /root/nltk_data
 
 # Copy compiled web pages
