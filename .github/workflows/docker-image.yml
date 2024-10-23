@@ -38,27 +38,10 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v4
 
-      - name: Setup NLTK Data and Other Files
+      - name: Install NLTK and Download Data
         run: |
-          RUNNER_WORKSPACE_PREFIX=${RUNNER_WORKSPACE_PREFIX:-$HOME}
-          # Check and copy required directories and files
-          if [ -d "${RUNNER_WORKSPACE_PREFIX}/huggingface.co" ]; then
-            cp -r ${RUNNER_WORKSPACE_PREFIX}/huggingface.co .
-          else
-            echo "Warning: huggingface.co directory does not exist."
-          fi
-
-          if [ -d "${RUNNER_WORKSPACE_PREFIX}/nltk_data" ]; then
-            cp -r ${RUNNER_WORKSPACE_PREFIX}/nltk_data . # Copy to current directory
-          else
-            echo "Warning: nltk_data directory does not exist."
-          fi
-
-          if ls ${RUNNER_WORKSPACE_PREFIX}/libssl*.deb 1> /dev/null 2>&1; then
-            cp ${RUNNER_WORKSPACE_PREFIX}/libssl*.deb .
-          else
-            echo "Warning: libssl*.deb files do not exist."
-          fi
+          python -m pip install nltk
+          python -m nltk.downloader -d nltk_data all
 
       - name: Build ragflow:dev-slim (arm64)
         run: |
